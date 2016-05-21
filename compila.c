@@ -124,7 +124,7 @@ static Stack* inicializa_pilha()
 	return p;
 }
 /** Gera o código de máquina de ret **/
-static unsigned char* gera_ret(Stack* pilha, char var, int* idx)
+static unsigned char* gera_ret(Stack* pilha, char var, int* idx, int* tamanho)
 {
 	unsigned char* machinecode;
 	unsigned char* ptr;
@@ -135,6 +135,7 @@ static unsigned char* gera_ret(Stack* pilha, char var, int* idx)
 		machinecode = (unsigned char*) malloc(sizeof(unsigned char) * 5);
 		machinecode[0] = 0xB8;
 		strcpy((char*)machinecode+1, (char*)ptr);
+		*tamanho += 5;
 	}
 	else if(var == 'p')
 	{
@@ -149,6 +150,7 @@ static unsigned char* gera_ret(Stack* pilha, char var, int* idx)
 		else if(*idx == 2)
 			//movq %edx, %eax
 			machinecode[1] = 0xD0;
+		*tamanho += 2;
 	}
 	else if(var == 'v')
 	{
@@ -159,6 +161,7 @@ static unsigned char* gera_ret(Stack* pilha, char var, int* idx)
 		machinecode[0] = 0x8B;
 		machinecode[1] = 0x45;
 		strcpy((char*)machinecode+2, (char*)ptr);
+		*tamanho += 6;
 	}
 
 	return machinecode;
@@ -242,8 +245,8 @@ static void gera(Memory* block, char caso, char var0, int idx0, char var1,int id
 	switch(caso){
 
 		case 'r':{
-			codetoi = gera_ret(pilha, var0, &idx0);
-			insere(block, codetoi, strlen((char*)codetoi) + 3);
+			codetoi = gera_ret(pilha, var0, &idx0, &tamanho);
+			insere(block, codetoi, tamanho);
 			break;
 		}
 		case 'v':{
