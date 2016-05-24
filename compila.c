@@ -134,7 +134,7 @@ static unsigned char* gera_ret(Stack* pilha, char var, int* idx, int* tamanho)
 		ptr = (unsigned char*)idx;
 		machinecode = (unsigned char*) malloc(sizeof(unsigned char) * 5);
 		machinecode[0] = 0xB8;
-		strcpy((char*)machinecode+1, (char*)ptr);
+		*((int*) &machinecode[1]) = *idx;
 		*tamanho += 5;
 	}
 	else if(var == 'p')
@@ -157,11 +157,11 @@ static unsigned char* gera_ret(Stack* pilha, char var, int* idx, int* tamanho)
 		//movl -num(%rbp), %eax
 		ptr = (unsigned char*) &pilha->locals[*idx];
 		*ptr = *ptr & 0xFF;
-		machinecode = (unsigned char*) malloc(sizeof(unsigned char) * 4);
+		machinecode = (unsigned char*) malloc(sizeof(unsigned char) * 6);
 		machinecode[0] = 0x8B;
 		machinecode[1] = 0x45;
-		strcpy((char*)machinecode+2, (char*)ptr);
-		*tamanho += 6;
+		*((int*) &machinecode[2]) = pilha->locals[*idx];
+		*tamanho += 3;
 	}
 
 	return machinecode;
@@ -169,8 +169,9 @@ static unsigned char* gera_ret(Stack* pilha, char var, int* idx, int* tamanho)
 
 /** Gera código de atribuição **/
 /** Utilizando %r13d para aritmética **/
-static void gera_next(unsigned char* machinecode, Stack* pilha, char op, char v2, int idx2, int* tamanho_string)
+static void gera_next(unsigned char* machinecode, Stack* pilha,int idx0, char op, char v2, int idx2, int* tamanho_string)
 {
+	int index = 0; // para inserir o epilogo
 	switch(op){
 		case '+':{
 			if(v2 == 'v')
@@ -179,18 +180,41 @@ static void gera_next(unsigned char* machinecode, Stack* pilha, char op, char v2
 				machinecode[0] = 0x44;
 				machinecode[1] = 0x03;
 				machinecode[2] = 0x6D;
-				strcpy((char*)machinecode+3, (char *) &pilha->locals[idx2]);
-				//movl %r13d, -num(%rbp)
-				machinecode[7] = 0x44;
-				machinecode[8] = 0x89;
-				machinecode[9] = 0x6D;
-				strcpy((char*)machinecode+11, (char *) &pilha->locals[idx2]);
-				*tamanho_string += 14;
+				*((int*) &machinecode[3]) = pilha->locals[idx2];
+				*tamanho_string += 4;
+				index = 4;
+
+			}
+			else if(v2 == '$')
+			{
+				//addl $num, %r13d
+				machinecode[0] = 0x41;
+				machinecode[2] = 0xC5;
+				*((int*) &machinecode[3]) = idx2;
+				if(idx2 < 128)
+				{
+					machinecode[1] = 0x83;
+					*tamanho_string += 4;
+					index = 4;
+				}
+				else
+				{
+					machinecode[1] = 0x81;
+					*tamanho_string += 7;
+					index = 7;
+				}
 			}
 
 		}
 
 	}
+
+	//movl %r13d, -num(%rbp)
+	machinecode[index] = 0x44;
+	machinecode[index + 1] = 0x89;
+	machinecode[index + 2] = 0x6D;
+	*((int*) &machinecode[index + 3]) = pilha->locals[idx0];
+	*tamanho_string += 4;
 
 }
 static unsigned char* gera_att(Stack* pilha, int idx0, char v1, int idx1, char op, char v2, int idx2, int* tamanho_string)
@@ -222,9 +246,9 @@ static unsigned char* gera_att(Stack* pilha, int idx0, char v1, int idx1, char o
 			// movl $idx1, %r13d
 			machinecode[0] = 0x41;
 			machinecode[1] = 0xBD;
-			strcpy((char*)machinecode+2, (char*) &idx1);
+			*((int*) &machinecode[2]) = idx1;
 			*tamanho_string += 6;
-			gera_next(machinecode+6, pilha, op, v2, idx2, tamanho_string);
+			gera_next(machinecode+6, pilha, idx0, op, v2, idx2, tamanho_string);
 		}
 	}
 
@@ -235,11 +259,10 @@ static unsigned char* gera_att(Stack* pilha, int idx0, char v1, int idx1, char o
 /** Controle da geração de código de ret e atribuição **/
 /** Desvia o fluxo para a função de geração correta **/
 /** Insere em block o código de máquina gerado **/
-static void gera(Memory* block, char caso, char var0, int idx0, char var1,int idx1,char op,char var2,
+static void gera(Stack* pilha, Memory* block, char caso, char var0, int idx0, char var1,int idx1,char op,char var2,
 		int idx2)
 {
 	unsigned char* codetoi;
-	Stack *pilha = inicializa_pilha();
 	int tamanho = 0;
 
 	switch(caso){
@@ -295,6 +318,7 @@ void checkVarP(char var, int idx, int line) {
 static void parser(Memory* block, FILE* myfp) {
 	int line = 1;
 	int c;
+	Stack *pilha = inicializa_pilha();
 	while ((c = fgetc(myfp)) != EOF) {
 		switch (c) {
 		case 'r': { /* retorno */
@@ -306,7 +330,7 @@ static void parser(Memory* block, FILE* myfp) {
 				checkVarP(var, idx, line);
 
 			//--//
-			gera(block, 'r', var, idx, 0, 0, 0, 0, 0);
+			gera(pilha, block, 'r', var, idx, 0, 0, 0, 0, 0);
 
 			printf("ret %c%d\n", var, idx);
 			break;
@@ -334,7 +358,7 @@ static void parser(Memory* block, FILE* myfp) {
 			if (var2 != '$')
 				checkVarP(var2, idx2, line);
 			//--//
-			gera(block, 'v', var0, idx0, var1, idx1, op, var2, idx2);
+			gera(pilha, block, 'v', var0, idx0, var1, idx1, op, var2, idx2);
 			printf("%c%d = %c%d %c %c%d\n", var0, idx0, var1, idx1, op, var2,
 					idx2);
 			break;
