@@ -174,38 +174,63 @@ static void gera_next(unsigned char* machinecode, Stack* pilha,int idx0, char op
 	int index = 0; // para inserir o epilogo
 	switch(op){
 		case '+':{
-			if(v2 == 'v')
-			{
-				//addl -num(%rbp), %r13d
-				machinecode[0] = 0x44;
-				machinecode[1] = 0x03;
-				machinecode[2] = 0x6D;
-				*((int*) &machinecode[3]) = pilha->locals[idx2];
-				*tamanho_string += 4;
-				index = 4;
+				 if(v2 == 'v')
+				 {
+					 //addl -num(%rbp), %r13d
+					 machinecode[0] = 0x44;
+					 machinecode[1] = 0x03;
+					 machinecode[2] = 0x6D;
+					 *((int*) &machinecode[3]) = pilha->locals[idx2];
+					 *tamanho_string += 4;
+					 index = 4;
 
-			}
-			else if(v2 == '$')
-			{
-				//addl $num, %r13d
-				machinecode[0] = 0x41;
-				machinecode[2] = 0xC5;
-				*((int*) &machinecode[3]) = idx2;
-				if(idx2 < 128)
-				{
-					machinecode[1] = 0x83;
-					*tamanho_string += 4;
-					index = 4;
-				}
-				else
-				{
-					machinecode[1] = 0x81;
-					*tamanho_string += 7;
-					index = 7;
-				}
-			}
+				 }
+				 else if(v2 == '$')
+				 {
+					 //addl $num, %r13d
+					 machinecode[0] = 0x41;
+					 machinecode[2] = 0xC5;
+					 *((int*) &machinecode[3]) = idx2;
+					 if(idx2 < 128)
+					 {
+						 machinecode[1] = 0x83;
+						 *tamanho_string += 4;
+						 index = 4;
+					 }
+					 else
+					 {
+						 machinecode[1] = 0x81;
+						 *tamanho_string += 7;
+						 index = 7;
+					 }
+				 }
+				 else if(v2 == 'p')
+				 {
 
-		}
+					 //addl regde'p', %r13d
+					 machinecode[0] = 0x41;
+					 machinecode[1] = 0x01;
+					 if(idx2 == 0)
+					 {
+						 //addl %edi, %r13d
+						 machinecode[2] = 0xFD;
+					 }
+					 else if(idx2 == 1)
+					 {
+						 //addl %esi, %r13d
+						 machinecode[2] = 0xF5;
+					 }
+					 else if(idx2 == 2)
+					 {
+						 //addl %edx, %r13d
+						 machinecode[2] = 0xD5;
+					 }
+					 *tamanho_string += 3;
+					 index = 3;
+
+				 }
+
+			 }
 
 	}
 
@@ -243,13 +268,38 @@ static unsigned char* gera_att(Stack* pilha, int idx0, char v1, int idx1, char o
 	}
 	switch(v1){
 		case '$':{
-			// movl $idx1, %r13d
-			machinecode[0] = 0x41;
-			machinecode[1] = 0xBD;
-			*((int*) &machinecode[2]) = idx1;
-			*tamanho_string += 6;
-			gera_next(machinecode+6, pilha, idx0, op, v2, idx2, tamanho_string);
-		}
+				 // movl $idx1, %r13d
+				 machinecode[0] = 0x41;
+				 machinecode[1] = 0xBD;
+				 *((int*) &machinecode[2]) = idx1;
+				 *tamanho_string += 6;
+				 gera_next(machinecode+6, pilha, idx0, op, v2, idx2, tamanho_string);
+			 }
+		case 'p':{
+				 //movl regde'p', %r13d
+				 machinecode[0] = 0x41;
+				 machinecode[1] = 0x89;
+				 if(idx1 == 0)
+					 //movl %edi, %r13d
+					 machinecode[2] = 0xFD;
+				 else if(idx1 == 1)
+					 //movl %esi, %r13d
+					 machinecode[2] = 0xF5;
+				 else if(idx1 == 2)
+					 //movl %edx, %r13d
+					 machinecode[2] = 0xD5;
+				 *tamanho_string += 3;
+				 gera_next(machinecode+3, pilha, idx0, op, v2, idx2, tamanho_string);
+			 }
+		case 'v':{
+				 //movl -num(%rbp), %r13d
+				 machinecode[0] = 0x44;
+			         machinecode[1] = 0x6B;
+				machinecode[2] = 0x6D;
+			       *((int *) &machinecode[3]) = pilha->locals[idx1];
+		       		*tamanho_string += 4;
+		 		gera_next(machinecode+4, pilha, idx0, op, v2, idx2, tamanho_string);
+			 }
 	}
 
 	machinecode = ptrinicio;
@@ -268,51 +318,51 @@ static void gera(Stack* pilha, Memory* block, char caso, char var0, int idx0, ch
 	switch(caso){
 
 		case 'r':{
-			codetoi = gera_ret(pilha, var0, &idx0, &tamanho);
-			insere(block, codetoi, tamanho);
-			break;
-		}
+				 codetoi = gera_ret(pilha, var0, &idx0, &tamanho);
+				 insere(block, codetoi, tamanho);
+				 break;
+			 }
 		case 'v':{
-			codetoi = gera_att(pilha, idx0, var1, idx1, op, var2, idx2, &tamanho);
-			insere(block, codetoi, tamanho);
-			break;
-		}
+				 codetoi = gera_att(pilha, idx0, var1, idx1, op, var2, idx2, &tamanho);
+				 insere(block, codetoi, tamanho);
+				 break;
+			 }
 	}
 
 
 }
 /** Parser de SB, gera o código em um unsigned array e insere em block->code **/
- /*
-  *
-  */
-static void error(const char *msg, int line) {
-	fprintf(stderr, "erro %s na linha %d\n", msg, line);
-	exit(EXIT_FAILURE);
-}
+/*
+ *
+ */
+	static void error(const char *msg, int line) {
+		fprintf(stderr, "erro %s na linha %d\n", msg, line);
+		exit(EXIT_FAILURE);
+	}
 
 void checkVar(char var, int idx, int line) {
 	switch (var) {
-	case 'v':
-		if ((idx < 0) || (idx > 19))
+		case 'v':
+			if ((idx < 0) || (idx > 19))
+				error("operando invalido", line);
+			break;
+		default:
 			error("operando invalido", line);
-		break;
-	default:
-		error("operando invalido", line);
 	}
 }
 
 void checkVarP(char var, int idx, int line) {
 	switch (var) {
-	case 'v':
-		if ((idx < 0) || (idx > 19))
+		case 'v':
+			if ((idx < 0) || (idx > 19))
+				error("operando invalido", line);
+			break;
+		case 'p':
+			if ((idx < 0) || (idx > 2))
+				error("operando invalido", line);
+			break;
+		default:
 			error("operando invalido", line);
-		break;
-	case 'p':
-		if ((idx < 0) || (idx > 2))
-			error("operando invalido", line);
-		break;
-	default:
-		error("operando invalido", line);
 	}
 }
 static void parser(Memory* block, FILE* myfp) {
@@ -321,55 +371,65 @@ static void parser(Memory* block, FILE* myfp) {
 	Stack *pilha = inicializa_pilha();
 	while ((c = fgetc(myfp)) != EOF) {
 		switch (c) {
-		case 'r': { /* retorno */
-			int idx;
-			char var;
-			if (fscanf(myfp, "et %c%d", &var, &idx) != 2)
-				error("comando invalido", line);
-			if (var != '$')
-				checkVarP(var, idx, line);
+			case 'r': { /* retorno */
+					  int idx;
+					  char var;
+					  if (fscanf(myfp, "et %c%d", &var, &idx) != 2)
+						  error("comando invalido", line);
+					  if (var != '$')
+						  checkVarP(var, idx, line);
 
-			//--//
-			gera(pilha, block, 'r', var, idx, 0, 0, 0, 0, 0);
+					  //--//
+					  gera(pilha, block, 'r', var, idx, 0, 0, 0, 0, 0);
 
-			printf("ret %c%d\n", var, idx);
-			break;
-		}
-		case 'i': { /* if */
-			int idx, n1, n2, n3;
-			char var;
-			if (fscanf(myfp, "f %c%d %d %d %d", &var, &idx, &n1, &n2, &n3) != 5)
-				error("comando invalido", line);
-			if (var != '$')
-				checkVar(var, idx, line);
-			printf("if %c%d %d %d %d\n", var, idx, n1, n2, n3);
-			break;
-		}
-		case 'v': { /* atribuicao */
-			int idx0, idx1, idx2;
-			char var0 = c, var1, var2;
-			char op;
-			if (fscanf(myfp, "%d = %c%d %c %c%d", &idx0, &var1, &idx1, &op,
-					&var2, &idx2) != 6)
-				error("comando invalido", line);
-			checkVar(var0, idx0, line);
-			if (var1 != '$')
-				checkVarP(var1, idx1, line);
-			if (var2 != '$')
-				checkVarP(var2, idx2, line);
-			//--//
-			gera(pilha, block, 'v', var0, idx0, var1, idx1, op, var2, idx2);
-			printf("%c%d = %c%d %c %c%d\n", var0, idx0, var1, idx1, op, var2,
-					idx2);
-			break;
-		}
-		default:
-			error("comando desconhecido", line);
+					  printf("ret %c%d\n", var, idx);
+					  break;
+				  }
+			case 'i': { /* if */
+					  int idx, n1, n2, n3;
+					  char var;
+					  if (fscanf(myfp, "f %c%d %d %d %d", &var, &idx, &n1, &n2, &n3) != 5)
+						  error("comando invalido", line);
+					  if (var != '$')
+						  checkVar(var, idx, line);
+					  printf("if %c%d %d %d %d\n", var, idx, n1, n2, n3);
+					  break;
+				  }
+			case 'v': { /* atribuicao */
+					  int idx0, idx1, idx2;
+					  char var0 = c, var1, var2;
+					  char op;
+					  if (fscanf(myfp, "%d = %c%d %c %c%d", &idx0, &var1, &idx1, &op,
+								  &var2, &idx2) != 6)
+						  error("comando invalido", line);
+					  checkVar(var0, idx0, line);
+					  if (var1 != '$')
+						  checkVarP(var1, idx1, line);
+					  if (var2 != '$')
+						  checkVarP(var2, idx2, line);
+					  //--//
+					  gera(pilha, block, 'v', var0, idx0, var1, idx1, op, var2, idx2);
+					  printf("%c%d = %c%d %c %c%d\n", var0, idx0, var1, idx1, op, var2,
+							  idx2);
+					  break;
+				  }
+			default:
+				  error("comando desconhecido", line);
 		}
 		line++;
 		fscanf(myfp, " ");
 	}
 }
+
+void debug(Memory* block)
+{
+	int i;
+	for(i = 0; i < block->index; i++)
+	{
+		printf("%x\n", block->code->source[i]);
+	}
+}
+
 
 funcp compila(FILE *f)
 {
@@ -380,6 +440,7 @@ funcp compila(FILE *f)
 	insere(block, prologo_inicio, 4);
 	parser(block, f);
 	insere(block, prologo_fim, 2);
+	debug(block);
 	finaliza(block);
 	return (funcp)block->finalcode;
 }
