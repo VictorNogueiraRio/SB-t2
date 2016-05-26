@@ -229,7 +229,7 @@ static void gera_next(unsigned char* machinecode, Stack* pilha,int idx0, char op
 					 index = 3;
 
 				 }
-
+				 break;
 			 }
 
 	}
@@ -244,14 +244,16 @@ static void gera_next(unsigned char* machinecode, Stack* pilha,int idx0, char op
 }
 static unsigned char* gera_att(Stack* pilha, int idx0, char v1, int idx1, char op, char v2, int idx2, int* tamanho_string)
 {
+	short sub = 0;
 	unsigned char* ptrinicio;
 	unsigned char* machinecode;
 	machinecode = (unsigned char*) malloc(sizeof(unsigned char) * 100); //otimizar malloc()
 
-	if((pilha->height % 8 == 0) || (pilha->height == 0))
+	if((pilha->height % 16 == 0) || (pilha->height == 0))
 		/* tira 16 da pilha*/
 	{
 		//subq $16, %rsp
+		sub = 1;
 		machinecode[0] = 0x48;
 		machinecode[1] = 0x83;
 		machinecode[2] = 0xEC;
@@ -265,6 +267,7 @@ static unsigned char* gera_att(Stack* pilha, int idx0, char v1, int idx1, char o
 	{
 		pilha->alocheight -= 4;
 		pilha->locals[idx0] = pilha->alocheight;
+		pilha->height += 4;
 	}
 	switch(v1){
 		case '$':{
@@ -274,6 +277,7 @@ static unsigned char* gera_att(Stack* pilha, int idx0, char v1, int idx1, char o
 				 *((int*) &machinecode[2]) = idx1;
 				 *tamanho_string += 6;
 				 gera_next(machinecode+6, pilha, idx0, op, v2, idx2, tamanho_string);
+				 break;
 			 }
 		case 'p':{
 				 //movl regde'p', %r13d
@@ -290,19 +294,23 @@ static unsigned char* gera_att(Stack* pilha, int idx0, char v1, int idx1, char o
 					 machinecode[2] = 0xD5;
 				 *tamanho_string += 3;
 				 gera_next(machinecode+3, pilha, idx0, op, v2, idx2, tamanho_string);
+				 break;
 			 }
 		case 'v':{
 				 //movl -num(%rbp), %r13d
 				 machinecode[0] = 0x44;
-			         machinecode[1] = 0x6B;
+			         machinecode[1] = 0x8B;
 				machinecode[2] = 0x6D;
 			       *((int *) &machinecode[3]) = pilha->locals[idx1];
 		       		*tamanho_string += 4;
 		 		gera_next(machinecode+4, pilha, idx0, op, v2, idx2, tamanho_string);
+		 		break;
 			 }
 	}
 
-	machinecode = ptrinicio;
+	if(sub)
+		machinecode = ptrinicio;
+
 	return machinecode;
 }
 
