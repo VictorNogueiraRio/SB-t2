@@ -5,6 +5,9 @@
 
 #define TAMANHO_BYTES 1600
 
+typedef union _code Code;
+typedef struct _mem Memory;
+
 union _code{
 	int a[400]; //1600 bytes
 	unsigned char source[1600];
@@ -25,6 +28,18 @@ struct _stack {
 	int locals[20]; //altura de cada varíavel local na pilha ( em relação a rbp )
 };
 
+typedef struct _codelines Lines;
+struct _codelines{
+	unsigned char linha[50]; //index da tradução de cada linha em source
+	unsigned char indexif[50]; //index de buraco do if
+	unsigned char linhaif[50]; //linha em que se localiza o if
+	unsigned char argsif[50]; // args de if (de 3 em 3)
+	unsigned char indexret[50]; //index de buraco de ret
+	unsigned char gerouif; //bool se gerou algum if
+	int idxlinhaif;
+	int idxargsif;
+	int idxret;
+};
 
 /** Preenche o inicio e o fim de uma função SB **/
 /* variaveis preenchidas:
@@ -65,11 +80,13 @@ static Memory* start()
 }
 
 /** Insere em block o array codigo **/
-static void insere(Memory* block, unsigned char* codigo, int size)
+static void insere(Memory* block, unsigned char* codigo, int size, Lines* linhas, int linha_atual)
 {
 	int i;
-	if(block->index < 8000)
+	if(block->index < TAMANHO_BYTES)
 	{
+		if(linha_atual > 0)
+			linhas->linha[linha_atual] = block->index;
 		for(i = 0; i < size; i++)
 		{
 			block->code->source[block->index] = codigo[i];
@@ -124,7 +141,7 @@ static Stack* inicializa_pilha()
 	return p;
 }
 /** Gera o código de máquina de ret **/
-static unsigned char* gera_ret(Stack* pilha, char var, int* idx, int* tamanho)
+static unsigned char* gera_ret(Stack* pilha, Lines* linhas, char var, int* idx, int* tamanho)
 {
 	unsigned char* machinecode;
 	unsigned char* ptr;
@@ -135,7 +152,9 @@ static unsigned char* gera_ret(Stack* pilha, char var, int* idx, int* tamanho)
 		machinecode = (unsigned char*) malloc(sizeof(unsigned char) * 5);
 		machinecode[0] = 0xB8;
 		*((int*) &machinecode[1]) = *idx;
-		*tamanho += 5;
+		//jmp
+		machinecode[5] = 0xEB;
+		*tamanho += 7;
 	}
 	else if(var == 'p')
 	{
@@ -150,7 +169,9 @@ static unsigned char* gera_ret(Stack* pilha, char var, int* idx, int* tamanho)
 		else if(*idx == 2)
 			//movq %edx, %eax
 			machinecode[1] = 0xD0;
-		*tamanho += 2;
+		//jmp
+		machinecode[2] = 0xEB;
+		*tamanho += 4;
 	}
 	else if(var == 'v')
 	{
@@ -161,7 +182,9 @@ static unsigned char* gera_ret(Stack* pilha, char var, int* idx, int* tamanho)
 		machinecode[0] = 0x8B;
 		machinecode[1] = 0x45;
 		*((int*) &machinecode[2]) = pilha->locals[*idx];
-		*tamanho += 3;
+		//jmp
+		machinecode[3] = 0xEB;
+		*tamanho += 5;
 	}
 
 	return machinecode;
@@ -231,6 +254,126 @@ static void gera_next(unsigned char* machinecode, Stack* pilha,int idx0, char op
 				 }
 				 break;
 			 }
+		case '-':
+		{
+			if(v2 == 'v')
+			{
+				//subl -num(%rbp), %r13d
+				machinecode[0] = 0x44;
+				machinecode[1] = 0x2B;
+				machinecode[2] = 0x6D;
+				*((int*) &machinecode[3]) = pilha->locals[idx2];
+				*tamanho_string += 4;
+				index = 4;
+			}
+			else if(v2 == 'p')
+			{
+				//subl regde'p', %r13d
+				machinecode[0] = 0x41;
+				machinecode[1] = 0x29;
+				if(idx2 == 0)
+				{
+					//subl %edi, %r13d
+					machinecode[2] = 0xFD;
+				}
+				else if(idx2 == 1)
+				{
+					//subl %esi, %r13d
+					machinecode[2] = 0xF5;
+				}
+				else if(idx2 == 2)
+				{
+					//subl %edx, %r13d
+					machinecode[2] = 0xD5;
+				}
+				*tamanho_string += 3;
+				index = 3;
+
+			}
+			else if(v2 == '$')
+			{
+				//subl $num, %r13d
+				machinecode[0] = 0x41;
+				machinecode[2] = 0xED;
+				*((int*) &machinecode[3]) = idx2;
+				if(idx2 < 128)
+				{
+					machinecode[1] = 0x83;
+					*tamanho_string += 4;
+					index = 4;
+				}
+				else
+				{
+					machinecode[1] = 0x81;
+					*tamanho_string += 7;
+					index = 7;
+				}
+
+			}
+
+			break;
+		}
+		case '*':
+		{
+
+			if(v2 == 'v')
+			{
+				//imull -num(%rbp), %r13d
+				machinecode[0] = 0x44;
+				machinecode[1] = 0x0F;
+				machinecode[2] = 0xAF;
+				machinecode[3] = 0x6D;
+				*((int *) &machinecode[4]) = pilha->locals[idx2];
+				*tamanho_string += 5;
+				index = 5;
+			}
+			else if(v2 == 'p')
+			{
+				//imull regde'p', %r13d
+				machinecode[0] = 0x44;
+				machinecode[1] = 0x0F;
+				machinecode[2] = 0xAF;
+				if(idx2 == 0)
+				{
+					//imull %edi, %r13d
+					machinecode[3] = 0xEF;
+				}
+				else if(idx2 == 1)
+				{
+					//imull %esi, %r13d
+					machinecode[3] = 0xEE;
+				}
+				else if(idx2 == 2)
+				{
+					//imull %edx, %r13d
+					machinecode[3] = 0xEA;
+				}
+				*tamanho_string += 4;
+				index = 4;
+
+			}
+			else if(v2 == '$')
+			{
+				//imull $num, %r13d
+				machinecode[0] = 0x45;
+				machinecode[2] = 0xED;
+				*((int*) &machinecode[3]) = idx2;
+				if(idx2 < 128)
+				{
+					machinecode[1] = 0x6B;
+					*tamanho_string += 4;
+					index = 4;
+				}
+				else
+				{
+					machinecode[1] = 0x69;
+					*tamanho_string += 7;
+					index = 7;
+				}
+
+			}
+			break;
+		}
 
 	}
 
@@ -297,15 +440,15 @@ static unsigned char* gera_att(Stack* pilha, int idx0, char v1, int idx1, char o
 				 break;
 			 }
 		case 'v':{
-				 //movl -num(%rbp), %r13d
-				 machinecode[0] = 0x44;
-			         machinecode[1] = 0x8B;
-				machinecode[2] = 0x6D;
-			       *((int *) &machinecode[3]) = pilha->locals[idx1];
-		       		*tamanho_string += 4;
-		 		gera_next(machinecode+4, pilha, idx0, op, v2, idx2, tamanho_string);
-		 		break;
-			 }
+			//movl -num(%rbp), %r13d
+			machinecode[0] = 0x44;
+			machinecode[1] = 0x8B;
+			machinecode[2] = 0x6D;
+			*((int *) &machinecode[3]) = pilha->locals[idx1];
+			*tamanho_string += 4;
+			gera_next(machinecode+4, pilha, idx0, op, v2, idx2, tamanho_string);
+			break;
+		}
 	}
 
 	if(sub)
@@ -314,11 +457,31 @@ static unsigned char* gera_att(Stack* pilha, int idx0, char v1, int idx1, char o
 	return machinecode;
 }
 
-/** Controle da geração de código de ret e atribuição **/
+/** Gera a o prólogo da instrução if **/
+static unsigned char* gera_if(Stack* pilha, int idx0, int* tamanho_string)
+{
+	unsigned char* machinecode = (unsigned char*) malloc(sizeof(unsigned char) * 20); //otimizar malloc()
+
+	//movl -num(%rbp), %r13d
+	machinecode[0] = 0x44;
+	machinecode[1] = 0x8B;
+	machinecode[2] = 0x6D;
+	*((int*) &machinecode[3]) = pilha->locals[idx0];
+	//cmpl $0, %r13d
+	machinecode[4] = 0x41;
+	machinecode[5] = 0x83;
+	machinecode[6] = 0xFD;
+	machinecode[7] = 0x00;
+
+	*tamanho_string += 8;
+
+	return machinecode;
+}
+/** Controle da geração de código de ret, atribuição e if **/
 /** Desvia o fluxo para a função de geração correta **/
 /** Insere em block o código de máquina gerado **/
 static void gera(Stack* pilha, Memory* block, char caso, char var0, int idx0, char var1,int idx1,char op,char var2,
-		int idx2)
+		int idx2, int idx3, int linha_atual, Lines* linhas)
 {
 	unsigned char* codetoi;
 	int tamanho = 0;
@@ -326,15 +489,35 @@ static void gera(Stack* pilha, Memory* block, char caso, char var0, int idx0, ch
 	switch(caso){
 
 		case 'r':{
-				 codetoi = gera_ret(pilha, var0, &idx0, &tamanho);
-				 insere(block, codetoi, tamanho);
+				 codetoi = gera_ret(pilha,linhas, var0, &idx0, &tamanho);
+				 linhas->indexret[linhas->idxret] = (block->index + tamanho) - 1;
+				 linhas->idxret += 1;
+				 insere(block, codetoi, tamanho, linhas, linha_atual);
+				 free(codetoi);
 				 break;
 			 }
 		case 'v':{
 				 codetoi = gera_att(pilha, idx0, var1, idx1, op, var2, idx2, &tamanho);
-				 insere(block, codetoi, tamanho);
+				 insere(block, codetoi, tamanho, linhas, linha_atual);
+				 free(codetoi);
 				 break;
 			 }
+		case 'i':{
+			linhas->linhaif[linhas->idxlinhaif] = linha_atual;
+			linhas->argsif[linhas->idxargsif] = idx1;
+			linhas->argsif[linhas->idxargsif + 1] = idx2;
+			linhas->argsif[linhas->idxargsif + 2] = idx3;
+			linhas->idxargsif += 3;
+			codetoi = gera_if(pilha, idx0, &tamanho);
+			insere(block, codetoi, tamanho, linhas, linha_atual);
+			//marca index pra preencher
+			linhas->indexif[linhas->idxlinhaif] = block->index;
+			linhas->idxlinhaif += 1;
+			block->index += 6;
+			free(codetoi);
+			break;
+
+		}
 	}
 
 
@@ -373,7 +556,7 @@ void checkVarP(char var, int idx, int line) {
 			error("operando invalido", line);
 	}
 }
-static void parser(Memory* block, FILE* myfp) {
+static void parser(Memory* block, FILE* myfp, Lines* linhas) {
 	int line = 1;
 	int c;
 	Stack *pilha = inicializa_pilha();
@@ -388,7 +571,7 @@ static void parser(Memory* block, FILE* myfp) {
 						  checkVarP(var, idx, line);
 
 					  //--//
-					  gera(pilha, block, 'r', var, idx, 0, 0, 0, 0, 0);
+					  gera(pilha, block, 'r', var, idx, 0, 0, 0, 0, 0, 0, line -1, linhas);
 
 					  printf("ret %c%d\n", var, idx);
 					  break;
@@ -400,6 +583,8 @@ static void parser(Memory* block, FILE* myfp) {
 						  error("comando invalido", line);
 					  if (var != '$')
 						  checkVar(var, idx, line);
+					  linhas->gerouif = 1;
+					  gera(pilha, block, 'i', 0, idx, 0, n1, 0, 0, n2, n3, line - 1, linhas);
 					  printf("if %c%d %d %d %d\n", var, idx, n1, n2, n3);
 					  break;
 				  }
@@ -416,7 +601,7 @@ static void parser(Memory* block, FILE* myfp) {
 					  if (var2 != '$')
 						  checkVarP(var2, idx2, line);
 					  //--//
-					  gera(pilha, block, 'v', var0, idx0, var1, idx1, op, var2, idx2);
+					  gera(pilha, block, 'v', var0, idx0, var1, idx1, op, var2, idx2, 0, line -1, linhas);
 					  printf("%c%d = %c%d %c %c%d\n", var0, idx0, var1, idx1, op, var2,
 							  idx2);
 					  break;
@@ -434,20 +619,94 @@ void debug(Memory* block)
 	int i;
 	for(i = 0; i < block->index; i++)
 	{
-		printf("%x\n", block->code->source[i]);
+		printf("%d : %x\n", i, block->code->source[i]);
 	}
 }
 
+/** Preenche os buracos de if e de ret **/
+static void preenche_resto(Lines* linhas, Memory* block)
+{
+	unsigned char dsl, dse, dsg, dsr;
+	int i, countif, k = 0;
+	//quantos if gerados
+	countif = linhas->idxargsif / 3;
+	for(i = 0; countif > 0; countif--, k++, i+=3)
+	{
+		dsl = linhas->linha[(linhas->argsif[i] - 1)] - ((linhas->linha[linhas->linhaif[k]]) + 8);
+		dse = linhas->linha[(linhas->argsif[i + 1] - 1)] - ((linhas->linha[linhas->linhaif[k]] + 2) + 8);
+		dsg = linhas->linha[(linhas->argsif[i + 2] - 1)] - ((linhas->linha[linhas->linhaif[k]] + 4) + 8);
+
+		// jl
+		block->code->source[linhas->indexif[k]] = 0x7C;
+		if(dsl < 0)
+		{
+			dsl--;
+			block->code->source[linhas->indexif[k] + 1] = dsl;
+		}
+		else if(dsl > 0)
+		{
+			dsl -=2;
+			block->code->source[linhas->indexif[k] + 1] = dsl;
+		}
+		// je
+		block->code->source[linhas->indexif[k] + 2] = 0x74;
+		if(dse < 0)
+		{
+			dse--;
+			block->code->source[linhas->indexif[k] + 3] = dse;
+		}
+		else if(dse > 0)
+		{
+			dse -=2;
+			block->code->source[linhas->indexif[k] + 3] = dse;
+		}
+		// jg
+		block->code->source[linhas->indexif[k] + 4] = 0x7F;
+		if(dsg < 0)
+		{
+			dsg--;
+			block->code->source[linhas->indexif[k] + 5] = dsg;
+		}
+		else if(dsg > 0)
+		{
+			dsg -=2;
+			block->code->source[linhas->indexif[k] + 5] = dsg;
+		}
+
+	}
+	for(i = 0; i < linhas->idxret; i++)
+	{
+		dsr = (block->index - linhas->indexret[i]) - 1;
+		block->code->source[linhas->indexret[i]] = dsr;
+	}
+
+
+
+}
 
 funcp compila(FILE *f)
 {
+	int i;
 	unsigned char prologo_inicio[4];
 	unsigned char prologo_fim[2];
+	Lines linhas;
+	for(i = 0; i < 50; i++)
+	{
+		linhas.linha[i] = 0;
+		linhas.indexif[i] = 0;
+		linhas.linhaif[i] = 0;
+		linhas.argsif[i] = -1;
+	}
+	linhas.gerouif = 0;
+	linhas.idxlinhaif = 0;
+	linhas.idxargsif = 0;
+	linhas.idxret = 0;
 	Memory* block = start();
 	preenche_prologo(prologo_inicio, prologo_fim);
-	insere(block, prologo_inicio, 4);
-	parser(block, f);
-	insere(block, prologo_fim, 2);
+	insere(block, prologo_inicio, 4, &linhas, -1);
+	parser(block, f, &linhas);
+	preenche_resto(&linhas, block);
+	insere(block, prologo_fim, 2, &linhas, -1);
 	debug(block);
 	finaliza(block);
 	return (funcp)block->finalcode;

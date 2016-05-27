@@ -4,8 +4,7 @@
 #include <stdio.h>
 
 
-typedef union _code Code;
-typedef struct _mem Memory;
+
 
 typedef int (*funcp) ();
 funcp compila (FILE* f);
